@@ -1,0 +1,20 @@
+#!/usr/bin/with-contenv bash
+
+while [ ! -f /tmp/state/10-listmonk ]
+do
+  sleep 1
+done
+
+### Set Debug Mode
+if [ "$DEBUG_MODE" = "TRUE" ] || [ "$DEBUG_MODE" = "true" ]; then
+    set -x
+fi
+
+if [ ! -f /tmp/state/20-nginx ]; then
+  echo 'Initialization Complete' >/tmp/state/20-nginx
+fi
+
+echo ''
+echo '** [listmonk] Starting nginx'
+exec nginx
+

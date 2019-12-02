@@ -1,0 +1,227 @@
+#!/usr/bin/with-contenv bash
+
+### Set Debug Mode
+if [ "$DEBUG_MODE" = "TRUE" ] || [ "$DEBUG_MODE" = "true" ]; then
+    set -x
+fi
+
+### Set Defaults
+ADMIN_USER=${ADMIN_USER:-"admin"}
+ADMIN_PASS=${ADMIN_pass:-"listmonk"}
+CONFIG_FILE=${CONFIG_FILE:-"config.toml"}
+DB_ENABLE_SSL=${DB_ENABLE_SSL:-disable}
+DB_PORT=${DB_PORT:-5432}
+ENABLE_NGINX=${ENABLE_NGINX:-"TRUE"}
+FROM_EMAIL=${FROM_EMAIL:-"Listmonk <listmonk@example.com>"}
+LISTEN_PORT=${LISTEN_PORT:-9000}
+MAX_CONCURRENT_WORKERS=${MAX_CONCURRENT_WORKERS:-100}
+MAX_SEND_ERRORS=${MAX_SEND_ERRORS:-1000}
+NOTIFY_EMAILS=${NOTIFY_EMAILS:-"admin@example.com"}
+PRIVACY_ENABLE_BLACKLIST=${PRIVACY_ENABLE_BLACKLIST:-"true"}
+PRIVACY_ENABLE_EXPORT=${PRIVACY_ENABLE_EXPORT:-"true"}
+PRIVACY_ENABLE_WIPE=${PRIVACY_ENABLE_WIPE:-"true"}
+PRIVACY_EXPORTABLE_ITEMS=${PRIVACY_EXPORTABLE_ITEMS:-"profile, subscriptions, campaign_views, link_clicks"}
+SETUP_TYPE=${SETUP_TYPE:-"AUTO"}
+SMTP_MAX_CONNECTIONS=${SMTP_MAX_CONNECTIONS="100"}
+SMTP_SEND_TIMEOUT=${SMTP_SEND_TIMEOUT:-5000}
+UPLOADS_FILESYSTEM_PATH=${UPLOADS_FILESYSTEM_PATH:-"/data/uploads"}
+UPLOADS_FILESYSTEM_URI=${UPLOADS_FILESYSTEM_URI:-"/uploads"}
+UPLOADS_PROVIDER_TYPE=${UPLOADS_PROVIDER_TYPE:-"filesystem"}
+UPLOADS_S3_AWS_REGION=${UPLOADS_S3_AWS_REGION:-"ap-south-1"}
+UPLOADS_S3_BUCKET_TYPE=${UPLOADS_S3_BUCKET_TYPE:-"public"}
+UPLOADS_S3_EXPIRY=${UPLOADS_S3_EXPIRY:-86400}
+
+generate_config() {
+	items=$(echo $PRIVACY_EXPORTABLE_ITEMS | tr "," "\n")
+	for item in $items
+		do
+		    privacy_exportable_items+='"'$item'",'
+	done
+
+	items=$(echo $NOTIFY_EMAILS | tr "," "\n")
+	for item in $items
+		do
+		    notify_emails+='"'$item'",'
+	done
+
+
+	cat <<EOF > /data/config/${CONFIG_FILE}
+# Custom Generated Listmonk configuration file for version ${LISTMONK_VERSION} Do not edit, instead set ENV Vars'
+# If you want to use your own config.toml file set SETUP_TYPE=MANUAL when starting container.'
+# Last Generated on `date`
+
+[app]
+address = "0.0.0.0:${LISTEN_PORT}"
+root = "${SITE_URL}"
+logo_url = "${LOGO_URL}"
+favicon_url = "${FAVICON_URL}"
+from_email = "${FROM_EMAIL}"
+notify_emails = [${notify_emails}]
+concurrency = ${MAX_CONCURRENT_WORKERS}
+max_send_errors = ${MAX_SEND_ERRORS}
+
+[privacy]
+allow_blacklist = ${PRIVACY_ENABLE_BLACKLIST}
+allow_export = ${PRIVACY_ENABLE_EXPORT}
+exportable = [${privacy_exportable_items}]
+allow_wipe = ${PRIVACY_ENABLE_WIPE}
+
+[db]
+host = "${DB_HOST}"
+port = ${DB_PORT}
+user = "${DB_USER}"
+password = "${DB_PASS}"
+database = "${DB_NAME}"
+ssl_mode = "${DB_ENABLE_SSL}"
+
+[upload]
+provider = "${UPLOADS_PROVIDER_TYPE}"
+
+[upload.s3]
+aws_access_key_id = "${UPLOADS_S3_AWS_KEY_ID}"
+aws_secret_access_key = "${UPLOADS_S3_AWS_KEY_SECRET}"
+aws_default_region="${UPLOADS_S3_AWS_REGION}"
+bucket="${UPLOADS_S3_BUCKET_NAME}"
+bucket_path="${UPLOADS_S3_BUCKET_PATH}"
+bucket_type="${UPLOADS_S3_BUCKET_TYPE}"
+expiry="${UPLOADS_S3_EXPIRY}"
+
+[upload.filesystem]
+upload_path="${UPLOADS_FILESYSTEM_PATH}"
+upload_uri ="${UPLOADS_FILESYSTEM_URI}"
+
+[smtp]
+EOF
+
+    ### Dynamically Generate SMTP Configurations
+    smtp_num=`printenv | sort | grep '\SMTP.*HOST' | wc -l`
+    for (( i = 1; i <= $smtp_num; i++ ))
+    do
+
+        SMTP_NAME=SMTP${i}_NAME
+        stripped_SMTP_NAME=`echo ${!SMTP_NAME} | sed "s# ##g"`
+        SMTP_HOST=SMTP${i}_HOST
+        SMTP_PORT=SMTP${i}_PORT
+        SMTP_AUTH_PROTOCOL=SMTP${i}_AUTH_PROTOCOL
+        SMTP_USER=SMTP${i}_USER
+        SMTP_PASS=SMTP${i}_PASS
+        smtp_SEND_TIMEOUT=SMTP${i}_SEND_TIMEOUT
+        smtp_MAX_CONNECTIONS=SMTP${i}_MAX_CONNECTIONS
+        
+        cat <<EOF >> /data/config/${CONFIG_FILE}
+    [smtp.$stripped_SMTP_NAME]
+        enabled = true
+        host = "${!SMTP_HOST}"
+        port = "${!SMTP_PORT}"
+        auth_protocol = "${!SMTP_AUTH_PROTOCOL}"
+        username = "${!SMTP_USER}"
+        password = "${!SMTP_PASS}"
+        send_timeout = ${!smtp_SEND_TIMEOUT:-$SMTP_SEND_TIMEOUT}
+        max_conns = ${!smtp_MAX_CONNECTIONS:-$SMTP_MAX_CONNECTIONS}
+
+EOF
+    done
+}
+
+### Sanity Test
+if [ ! -n "$DB_HOST" ]; then
+    echo "** [listmonk] ERROR: No Database Host Entered! Exiting.."
+    exit 1
+fi
+
+if [ ! -n "$DB_NAME" ]; then
+    echo "** [listmonk] ERROR: No Database Pass Entered! Exiting.."
+    exit 1
+fi
+
+if [ ! -n "$DB_USER" ]; then
+    echo "** [listmonk] ERROR: No Database User Entered! Exiting.."
+    exit 1
+fi
+
+if [ ! -n "$DB_PASS" ]; then
+    echo "** [listmonk] ERROR: No Database Pass Entered! Exiting.."
+    exit 1
+fi
+
+if [ "$UPLOADS_PROVIDER_TYPE" = "S3" ] || [ "$UPLOADS_PROVIDER_TYPE" = "s3" ]; then
+	if [ ! -n "$UPLOADS_S3_AWS_KEY_ID" ]; then
+    echo "** [listmonk] ERROR: No S3 Key ID provided Exiting.."
+    exit 1
+	fi	
+
+	if [ ! -n "$UPLOADS_S3_AWS_KEY_ID" ]; then
+    echo "** [listmonk] ERROR: No S3 Key Secret provided! Exiting.."
+    exit 1
+	fi	
+fi
+
+if [ ! -f "/data/.version" ]; then
+	SETUP_TYPE=AUTO
+fi
+
+### Check to see if DB Is Ready
+until PGPASSWORD=${DB_PASS} psql --host=${DB_HOST} --username=${DB_USER} ${DB_NAME} -w &>/dev/null
+do
+  echo "** [listmonk] Waiting for ${DB_HOST} to be avaialable"
+  sleep 5
+done
+
+mkdir -p /data/config
+mkdir -p /data/${UPLOADS_FILESYSTEM_PATH}
+
+if [ "$SETUP_TYPE" = "AUTO" ]; then
+	 echo '** [listmonk] Autogenerating Configuration File'
+	 generate_config
+else
+	 echo '** [listmonk] Manual Configuration Mode Activated - Attempting to use in place configuration'
+	 if [ ! -f /listmonk/config/${CONFIG_FILE} ]; then
+	 	echo "** [listmonk] No Configuration File found! Auto Generating"
+	 	generate_config
+	 fi
+fi
+
+
+if [ "$ENABLE_NGINX" = "TRUE" ] || "$ENABLE_NGINX" = "true" ]; then
+	echo "** [listmonk] Configuring Nginx with Basic authentication"
+	    admin_num=`printenv | sort | grep '\ADMIN.*USER' | wc -l`
+    for (( i = 1; i <= $smtp_num; i++ ))
+    do
+
+        admin_USER=ADMIN${i}_USER
+        admin_PASS=ADMIN${i}_PASS
+        echo "** [listmonk] Creating User: ${!ADMIN_USER}"
+		htpasswd -b -n ${!admin_USER:-$ADMIN_USER} ${!admin_PASS:-$ADMIN_PASS} >> /etc/nginx/authorized_users
+    done
+else
+	echo "** [listmonk] Disabling Nginx, this is a huge security risk as there is no authentication!"
+    s6-svc -d /var/run/s6/services/20-nginx
+fi
+
+if [ ! -f "/data/.version" ]; then
+	echo "** [listmonk] Detected this is a new install. Populating Database Schema"
+    cat <<EOF > /tmp/listmonk-create.sh
+#!/usr/bin/expect
+
+spawn /app/listmonk --config /data/config/$CONFIG_FILE --install	
+expect "Continue (y/n)? "
+send -- "y\n"
+expect close
+EOF
+
+	chmod +x /tmp/listmonk-create.sh
+	/tmp/listmonk-create.sh
+	rm -rf /tmp/listmonk-create.sh
+	echo $LISTMONK_VERSION 'first installed on '`date`> /data/.version
+fi
+
+if [ "$LISTMONK_VERSION" != `head -n 1 /data/.version | awk '{print $1'}` ]; then
+    echo "** [listmonk] Detected New Version from original installation"
+    echo $LISTMONK_VERSION 'upgraded on '`date` | cat - /data/.version > /tmp/.version && mv /tmp/.version /data/.version
+fi
+
+echo "** [listmonk] Container Initialized - Now starting Web Services - Visit "$SITE_URL" to proceed"
+
+
+mkdir -p /tmp/state
+touch /tmp/state/10-listmonk-init

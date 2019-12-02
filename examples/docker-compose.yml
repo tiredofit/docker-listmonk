@@ -1,0 +1,81 @@
+version: '3.7'
+services:
+  
+  listmonk-app:
+    image: registry.selfdesign.org/docker/listmonk
+    container_name: listmonk-app
+    ports:
+    - 9000:9000
+    - 8000:80
+    labels:
+    - traefik.enable=true
+    - traefik.frontend.rule=Host:listmonk.example.com
+    - traefik.port=80
+    - traefik.protocol=http
+    - traefik.docker.network=proxy
+    - traefik.backend=listmonk-app
+    volumes:
+    - ./data:/data
+    environment:
+    - ZABBIX_HOSTNAME=listmonk-app
+
+    - DB_HOST=listmonk-db
+    - DB_USER=listmonk
+    - DB_PASS=password
+    - DB_NAME=listmonk
+
+    - SITE_URL=https://listmonk.example.com
+
+    - SMTP1_NAME=Postfix Relay
+    - SMTP1_HOST=postfix-relay
+    - SMTP1_PORT=25
+    - SMTP_AUTHENTICATION_TYPE=plain
+
+    - DEBUG_MODE=FALSE
+    networks:
+    - proxy
+    - services
+    restart: always
+
+  listmonk-db:
+    image: registry.selfdesign.org/docker/postgres/12.0:latest
+    container_name: listmonk-db
+    volumes:
+      - ./db:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=listmonk
+      - POSTGRES_USER=listmonk
+      - POSTGRES_PASSWORD=password
+      - ZABBIX_HOSTNAME=listmonk-db
+    networks:
+      - services
+    restart: always
+
+  listmonk-db-backup:
+    image: registry.selfdesign.org/docker/db-backup
+    container_name: listmonk-db-backup
+    links:
+     - listmonk-db
+    volumes:
+      - ./dbbackup:/backup
+    environment:
+      - ZABBIX_HOSTNAME=listmonk-db-backup
+      - DB_HOST=listmonk-db
+      - DB_TYPE=postgres
+      - DB_NAME=listmonk
+      - DB_USER=listmonk
+      - DB_PASS=password
+      - DB_DUMP_FREQ=1440
+      - DB_DUMP_BEGIN=0000
+      - DB_CLEANUP_TIME=8640
+      - COMPRESSION=BZ
+      - MD5=TRUE
+    networks:
+      - services
+    restart: always
+
+networks:
+  proxy:
+    external: true
+  services:
+    external: true

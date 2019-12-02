@@ -1,0 +1,22 @@
+#!/usr/bin/with-contenv bash
+
+while [ ! -f /tmp/state/10-listmonk-init ]
+do
+  sleep 1
+done
+
+### Set Defaults
+CONFIG_FILE=${CONFIG_FILE:-"config.toml"}
+
+### Set Debug Mode
+if [ "$DEBUG_MODE" = "TRUE" ] || [ "$DEBUG_MODE" = "true" ]; then
+    set -x
+fi
+
+if [ ! -f /tmp/state/10-listmonk ]; then
+  echo "Initialization Complete" >/tmp/state/10-listmonk
+fi
+
+echo ""
+echo "** [listmonk] Starting listmonk ${LISTMONK_VERSION}"
+exec /app/listmonk --config /data/config/${CONFIG_FILE}
