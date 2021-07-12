@@ -2,7 +2,7 @@ version: '3.7'
 services:
   
   listmonk-app:
-    image: registry.selfdesign.org/docker/listmonk
+    image: tiredofit/listmonk
     container_name: listmonk-app
     ports:
     - 9000:9000
@@ -38,7 +38,7 @@ services:
     restart: always
 
   listmonk-db:
-    image: registry.selfdesign.org/docker/postgres/12.0:latest
+    image: tiredofit/postgres/12.0:latest
     container_name: listmonk-db
     volumes:
       - ./db:/var/lib/postgresql/data
@@ -52,7 +52,7 @@ services:
     restart: always
 
   listmonk-db-backup:
-    image: registry.selfdesign.org/docker/db-backup
+    image: tiredofit/db-backup
     container_name: listmonk-db-backup
     links:
      - listmonk-db
